@@ -8,6 +8,7 @@ import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update
 from telegram.ext import (
+    Application,
     ApplicationBuilder,
     CommandHandler,
     ConversationHandler,
@@ -366,7 +367,32 @@ async def _daily_report_job(bot) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    # Scheduler — must start inside async context (post_init)
+    tz = pytz.timezone(TZ_NAME)
+    scheduler = AsyncIOScheduler(timezone=tz)
+
+    async def post_init(application: Application) -> None:
+        scheduler.add_job(
+            _daily_report_job,
+            "cron",
+            hour=REPORT_HOUR,
+            minute=REPORT_MINUTE,
+            args=[application.bot],
+        )
+        scheduler.start()
+        logger.info("Scheduler started. Next report at %02d:%02d %s", REPORT_HOUR, REPORT_MINUTE, TZ_NAME)
+
+    async def post_shutdown(application: Application) -> None:
+        if scheduler.running:
+            scheduler.shutdown()
+
+    app = (
+        ApplicationBuilder()
+        .token(TELEGRAM_TOKEN)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .build()
+    )
 
     # Conversations
     open_conv = ConversationHandler(
@@ -393,18 +419,6 @@ def main() -> None:
     app.add_handler(close_conv)
     # Free-form photo report (lowest priority)
     app.add_handler(MessageHandler(filters.PHOTO, photo_report))
-
-    # Scheduler
-    tz = pytz.timezone(TZ_NAME)
-    scheduler = AsyncIOScheduler(timezone=tz)
-    scheduler.add_job(
-        _daily_report_job,
-        "cron",
-        hour=REPORT_HOUR,
-        minute=REPORT_MINUTE,
-        args=[app.bot],
-    )
-    scheduler.start()
 
     logger.info("Flower shop bot started. Owner ID: %s", OWNER_ID)
     app.run_polling()
