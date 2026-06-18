@@ -58,7 +58,7 @@ async def _pf_auth() -> bool:
                 json={
                     "data": {
                         "type": "sessions",
-                        "attributes": {"login": PF_LOGIN, "password": PF_PASSWORD},
+                        "attributes": {"username": PF_LOGIN, "password": PF_PASSWORD},
                     }
                 },
             )
